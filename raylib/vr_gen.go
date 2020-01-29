@@ -1,22 +1,22 @@
 package raylib
+
 /*
-//Generated 2020-01-29T20:54:04+01:00
+//Generated 2020-01-29T21:04:25+01:00
 #include "raylib.h"
 #include <stdlib.h>
 #include "go.h"
 */
 import "C"
-import "unsafe"
+
 //InitVrSimulator : Init VR simulator for selected device parameters
-func InitVrSimulator() () {
- C.InitVrSimulator() 
+func InitVrSimulator() {
+	C.InitVrSimulator()
 }
 
 //CloseVrSimulator : Close VR simulator for current device
-func CloseVrSimulator() () {
- C.CloseVrSimulator() 
+func CloseVrSimulator() {
+	C.CloseVrSimulator()
 }
-
 
 //UpdateVrTracking : Update VR tracking (position and orientation) and camera
 func UpdateVrTracking(camera *Camera) {
@@ -25,29 +25,29 @@ func UpdateVrTracking(camera *Camera) {
 }
 
 //SetVrConfiguration : Set stereo rendering configuration parameters
-func SetVrConfiguration(info VrDeviceInfo, distortion Shader) () {
- cdistortion := *distortion.cptr()
-cinfo := *info.cptr()
-C.SetVrConfiguration(cinfo, cdistortion) 
+func SetVrConfiguration(info VrDeviceInfo, distortion Shader) {
+	cdistortion := *distortion.cptr()
+	cinfo := *info.cptr()
+	C.SetVrConfiguration(cinfo, cdistortion)
 }
 
 //IsVrSimulatorReady : Detect if VR simulator is ready
-func IsVrSimulatorReady() ( bool) {
- res := C.IsVrSimulatorReady()
-return bool(res) 
+func IsVrSimulatorReady() bool {
+	res := C.IsVrSimulatorReady()
+	return bool(res)
 }
 
 //ToggleVrMode : Enable/Disable VR experience
-func ToggleVrMode() () {
- C.ToggleVrMode() 
+func ToggleVrMode() {
+	C.ToggleVrMode()
 }
 
 //BeginVrDrawing : Begin VR simulator stereo rendering
-func BeginVrDrawing() () {
- C.BeginVrDrawing() 
+func BeginVrDrawing() {
+	C.BeginVrDrawing()
 }
 
 //EndVrDrawing : End VR simulator stereo rendering
-func EndVrDrawing() () {
- C.EndVrDrawing() 
+func EndVrDrawing() {
+	C.EndVrDrawing()
 }
