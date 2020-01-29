@@ -6,7 +6,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2018-2019 Ahmad Fatoum & Ramon Santamaria (@raysan5)
+*   Copyright (c) 2018-2020 Ahmad Fatoum & Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -48,6 +48,8 @@
 #define SUPPORT_MOUSE_CURSOR_RPI    1
 // Use busy wait loop for timing sync, if not defined, a high-resolution timer is setup and used
 //#define SUPPORT_BUSY_WAIT_LOOP      1
+// Use a half-busy wait loop, in this case frame sleeps for some time and runs a busy-wait-loop at the end
+//#define SUPPORT_HALFBUSY_WAIT_LOOP
 // Wait for events passively (sleeping while no events) instead of polling them actively every frame
 //#define SUPPORT_EVENTS_WAITING      1
 // Allow automatic screen capture of current screen pressing F12, defined in KeyCallback()
@@ -84,9 +86,9 @@
 //#define SUPPORT_FILEFORMAT_BMP    1
 //#define SUPPORT_FILEFORMAT_TGA    1
 //#define SUPPORT_FILEFORMAT_JPG    1
-//#define SUPPORT_FILEFORMAT_GIF    1
+#define SUPPORT_FILEFORMAT_GIF    1
 //#define SUPPORT_FILEFORMAT_PSD    1
-//#define SUPPORT_FILEFORMAT_DDS    1
+#define SUPPORT_FILEFORMAT_DDS    1
 #define SUPPORT_FILEFORMAT_HDR      1
 //#define SUPPORT_FILEFORMAT_KTX    1
 //#define SUPPORT_FILEFORMAT_ASTC   1

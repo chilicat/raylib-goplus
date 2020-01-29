@@ -22,7 +22,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2015-2019 Ramon Santamaria (@raysan5)
+*   Copyright (c) 2015-2020 Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -167,8 +167,8 @@ void SetCameraMoveControls(int frontKey, int backKey,
 // FIRST_PERSON
 //#define CAMERA_FIRST_PERSON_MOUSE_SENSITIVITY           0.003f
 #define CAMERA_FIRST_PERSON_FOCUS_DISTANCE              25.0f
-#define CAMERA_FIRST_PERSON_MIN_CLAMP                   85.0f
-#define CAMERA_FIRST_PERSON_MAX_CLAMP                  -85.0f
+#define CAMERA_FIRST_PERSON_MIN_CLAMP                   89.0f
+#define CAMERA_FIRST_PERSON_MAX_CLAMP                  -89.0f
 
 #define CAMERA_FIRST_PERSON_STEP_TRIGONOMETRIC_DIVIDER  5.0f
 #define CAMERA_FIRST_PERSON_STEP_DIVIDER                30.0f
@@ -243,13 +243,9 @@ void SetCameraMode(Camera camera, int mode)
 
     cameraTargetDistance = sqrtf(dx*dx + dy*dy + dz*dz);
 
-    Vector2 distance = { 0.0f, 0.0f };
-    distance.x = sqrtf(dx*dx + dz*dz);
-    distance.y = sqrtf(dx*dx + dy*dy);
-
     // Camera angle calculation
-    cameraAngle.x = asinf( (float)fabs(dx)/distance.x);  // Camera angle in plane XZ (0 aligned with Z, move positive CCW)
-    cameraAngle.y = -asinf( (float)fabs(dy)/distance.y); // Camera angle in plane XY (0 aligned with X, move positive CW)
+    cameraAngle.x = atan2f(dx, dz);                   // Camera angle in plane XZ (0 aligned with Z, move positive CCW)
+    cameraAngle.y = atan2f(dy, sqrtf(dx*dx + dz*dz)); // Camera angle in plane XY (0 aligned with X, move positive CW)
 
     playerEyesPosition = camera.position.y;
 
@@ -379,17 +375,16 @@ void UpdateCamera(Camera *camera)
                 else
                 {
                     // Camera panning
-                    camera->target.x += ((mousePositionDelta.x*-CAMERA_FREE_MOUSE_SENSITIVITY)*cosf(cameraAngle.x) + (mousePositionDelta.y*CAMERA_FREE_MOUSE_SENSITIVITY)*sinf(cameraAngle.x)*sinf(cameraAngle.y))*(cameraTargetDistance/CAMERA_FREE_PANNING_DIVIDER);
+                    camera->target.x += ((mousePositionDelta.x*CAMERA_FREE_MOUSE_SENSITIVITY)*cosf(cameraAngle.x) + (mousePositionDelta.y*CAMERA_FREE_MOUSE_SENSITIVITY)*sinf(cameraAngle.x)*sinf(cameraAngle.y))*(cameraTargetDistance/CAMERA_FREE_PANNING_DIVIDER);
                     camera->target.y += ((mousePositionDelta.y*CAMERA_FREE_MOUSE_SENSITIVITY)*cosf(cameraAngle.y))*(cameraTargetDistance/CAMERA_FREE_PANNING_DIVIDER);
-                    camera->target.z += ((mousePositionDelta.x*CAMERA_FREE_MOUSE_SENSITIVITY)*sinf(cameraAngle.x) + (mousePositionDelta.y*CAMERA_FREE_MOUSE_SENSITIVITY)*cosf(cameraAngle.x)*sinf(cameraAngle.y))*(cameraTargetDistance/CAMERA_FREE_PANNING_DIVIDER);
+                    camera->target.z += ((mousePositionDelta.x*-CAMERA_FREE_MOUSE_SENSITIVITY)*sinf(cameraAngle.x) + (mousePositionDelta.y*CAMERA_FREE_MOUSE_SENSITIVITY)*cosf(cameraAngle.x)*sinf(cameraAngle.y))*(cameraTargetDistance/CAMERA_FREE_PANNING_DIVIDER);
                 }
             }
 
             // Update camera position with changes
-            camera->position.x = sinf(cameraAngle.x)*cameraTargetDistance*cosf(cameraAngle.y) + camera->target.x;
-            camera->position.y = ((cameraAngle.y <= 0.0f)? 1 : -1)*sinf(cameraAngle.y)*cameraTargetDistance*sinf(cameraAngle.y) + camera->target.y;
-            camera->position.z = cosf(cameraAngle.x)*cameraTargetDistance*cosf(cameraAngle.y) + camera->target.z;
-
+            camera->position.x = -sinf(cameraAngle.x)*cameraTargetDistance*cosf(cameraAngle.y) + camera->target.x;
+            camera->position.y = -sinf(cameraAngle.y)*cameraTargetDistance + camera->target.y;
+            camera->position.z = -cosf(cameraAngle.x)*cameraTargetDistance*cosf(cameraAngle.y) + camera->target.z;
         } break;
         case CAMERA_ORBITAL:
         {
@@ -433,10 +428,14 @@ void UpdateCamera(Camera *camera)
             if (cameraAngle.y > CAMERA_FIRST_PERSON_MIN_CLAMP*DEG2RAD) cameraAngle.y = CAMERA_FIRST_PERSON_MIN_CLAMP*DEG2RAD;
             else if (cameraAngle.y < CAMERA_FIRST_PERSON_MAX_CLAMP*DEG2RAD) cameraAngle.y = CAMERA_FIRST_PERSON_MAX_CLAMP*DEG2RAD;
 
-            // Camera is always looking at player
-            camera->target.x = camera->position.x - sinf(cameraAngle.x)*CAMERA_FIRST_PERSON_FOCUS_DISTANCE;
-            camera->target.y = camera->position.y + sinf(cameraAngle.y)*CAMERA_FIRST_PERSON_FOCUS_DISTANCE;
-            camera->target.z = camera->position.z - cosf(cameraAngle.x)*CAMERA_FIRST_PERSON_FOCUS_DISTANCE;
+            // Recalculate camera target considering translation and rotation
+            Matrix translation = MatrixTranslate(0, 0, (cameraTargetDistance/CAMERA_FREE_PANNING_DIVIDER));
+            Matrix rotation = MatrixRotateXYZ((Vector3){ PI*2 - cameraAngle.y, PI*2 - cameraAngle.x, 0 });
+            Matrix transform = MatrixMultiply(translation, rotation);
+            
+            camera->target.x = camera->position.x - transform.m12;
+            camera->target.y = camera->position.y - transform.m13;
+            camera->target.z = camera->position.z - transform.m14;
 
             if (isMoving) swingCounter++;
 

@@ -1,12 +1,12 @@
 package raylib
-
 /*
-//Generated 2020-01-21T13:50:21+11:00
+//Generated 2020-01-29T20:54:04+01:00
 #include "raylib.h"
 #include <stdlib.h>
 #include "go.h"
 */
 import "C"
+import "unsafe"
 
 //SetMode : Set camera mode (multiple camera modes available)
 func (camera *Camera) SetMode(mode CameraMode) {
@@ -19,23 +19,23 @@ func (camera *Camera) SetMode(mode CameraMode) {
 func SetCameraMode(camera *Camera, mode CameraMode) {
 	camera.SetMode(mode)
 }
-
 //Update : Update camera position for selected mode
-func (camera *Camera) Update() {
-	ccamera := camera.cptr()
-	C.UpdateCamera(ccamera)
+func (camera *Camera) Update() () {
+ ccamera := camera.cptr()
+C.UpdateCamera(ccamera) 
 }
-
 //UpdateCamera : Update camera position for selected mode
 //Recommended to use camera.Update() instead
-func UpdateCamera(camera *Camera) {
-	camera.Update()
+func UpdateCamera(camera *Camera) () {
+ camera.Update() 
 }
+
 
 //SetCameraPanControl : Set camera pan key to combine with mouse movement (free camera)
 func SetCameraPanControl(panKey Key) {
 	C.SetCameraPanControl(C.int(panKey))
 }
+
 
 //SetCameraAltControl : Set camera alt key to combine with mouse movement (free camera)
 func SetCameraAltControl(altKey Key) {
@@ -46,6 +46,7 @@ func SetCameraAltControl(altKey Key) {
 func SetCameraSmoothZoomControl(szKey Key) {
 	C.SetCameraSmoothZoomControl(C.int(szKey))
 }
+
 
 //SetCameraMoveControls : Set camera move controls (1st person and 3rd person cameras)
 func SetCameraMoveControls(frontKey Key, backKey Key, rightKey Key, leftKey Key, upKey Key, downKey Key) {

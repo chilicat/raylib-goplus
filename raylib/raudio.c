@@ -46,7 +46,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2013-2019 Ramon Santamaria (@raysan5)
+*   Copyright (c) 2013-2020 Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -221,20 +221,20 @@ struct rAudioBuffer {
 #define AudioBuffer rAudioBuffer        // HACK: To avoid CoreAudio (macOS) symbol collision
 
 // Audio buffers are tracked in a linked list
-static AudioBuffer *firstAudioBuffer = NULL;
-static AudioBuffer *lastAudioBuffer = NULL;
+static AudioBuffer *firstAudioBuffer = NULL;    // Pointer to first AudioBuffer in the list
+static AudioBuffer *lastAudioBuffer = NULL;     // Pointer to last AudioBuffer in the list
 
 // miniaudio global variables
-static ma_context context;
-static ma_device device;
-static ma_mutex audioLock;
-static bool isAudioInitialized = false;
-static float masterVolume = 1.0f;
+static ma_context context;                      // miniaudio context data
+static ma_device device;                        // miniaudio device
+static ma_mutex audioLock;                      // miniaudio mutex lock
+static bool isAudioInitialized = false;         // Check if audio device is initialized
+static float masterVolume = 1.0f;               // Master volume (multiplied on output mixing)
 
 // Multi channel playback global variables
-AudioBuffer *audioBufferPool[MAX_AUDIO_BUFFER_POOL_CHANNELS] = { 0 };
-unsigned int audioBufferPoolCounter = 0;
-unsigned int audioBufferPoolChannels[MAX_AUDIO_BUFFER_POOL_CHANNELS] = { 0 };
+static AudioBuffer *audioBufferPool[MAX_AUDIO_BUFFER_POOL_CHANNELS] = { 0 };         // Multichannel AudioBuffer pointers pool
+static unsigned int audioBufferPoolCounter = 0;                                      // AudioBuffer pointers pool counter
+static unsigned int audioBufferPoolChannels[MAX_AUDIO_BUFFER_POOL_CHANNELS] = { 0 }; // AudioBuffer pool channels
 
 // miniaudio functions declaration
 static void OnLog(ma_context *pContext, ma_device *pDevice, ma_uint32 logLevel, const char *message);
@@ -323,6 +323,12 @@ static void OnSendAudioDataToDevice(ma_device *pDevice, void *pFramesOut, const 
 
                         framesToRead -= framesJustRead;
                         framesRead += framesJustRead;
+                    }
+                    
+                    if (!audioBuffer->playing)
+                    {
+                        framesRead = frameCount;
+                        break;
                     }
 
                     // If we weren't able to read all the frames we requested, break
@@ -662,7 +668,7 @@ bool IsAudioBufferPlaying(AudioBuffer *buffer)
     bool result = false;
 
     if (buffer != NULL) result = (buffer->playing && !buffer->paused);
-    else TraceLog(LOG_ERROR, "IsAudioBufferPlaying() : No audio buffer");
+    else TraceLog(LOG_WARNING, "IsAudioBufferPlaying() : No audio buffer");
 
     return result;
 }
@@ -1244,8 +1250,9 @@ Music LoadMusicStream(const char *fileName)
 
             // NOTE: Only stereo is supported for XM
             music.stream = InitAudioStream(48000, 16, 2);
-            music.sampleCount = (unsigned int)jar_xm_get_remaining_samples(ctxXm);
+            music.sampleCount = (unsigned int)jar_xm_get_remaining_samples(ctxXm)*2;
             music.loopCount = 0;   // Infinite loop by default
+            jar_xm_reset(ctxXm);   // make sure we start at the beginning of the song
             musicLoaded = true;
 
             music.ctxData = ctxXm;
@@ -1267,7 +1274,7 @@ Music LoadMusicStream(const char *fileName)
 
             // NOTE: Only stereo is supported for MOD
             music.stream = InitAudioStream(48000, 16, 2);
-            music.sampleCount = (unsigned int)jar_mod_max_samples(ctxMod);
+            music.sampleCount = (unsigned int)jar_mod_max_samples(ctxMod)*2;
             music.loopCount = 0;   // Infinite loop by default
             musicLoaded = true;
         }
@@ -1722,7 +1729,7 @@ static Wave LoadWAV(const char *fileName)
     WAVData wavData;
 
     Wave wave = { 0 };
-    FILE *wavFile;
+    FILE *wavFile = NULL;
 
     wavFile = fopen(fileName, "rb");
 

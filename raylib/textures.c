@@ -38,7 +38,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2013-2019 Ramon Santamaria (@raysan5)
+*   Copyright (c) 2013-2020 Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -115,7 +115,7 @@
 
     #define STBI_MALLOC RL_MALLOC
     #define STBI_FREE RL_FREE
-    #define STBI_REALLOC(p,newsz) realloc(p,newsz)
+    #define STBI_REALLOC RL_REALLOC
 
     #define STB_IMAGE_IMPLEMENTATION
     #include "external/stb_image.h"         // Required for: stbi_load_from_file()
@@ -301,7 +301,7 @@ Image LoadImage(const char *fileName)
 // NOTE: Creates a copy of pixels data array
 Image LoadImageEx(Color *pixels, int width, int height)
 {
-    Image image;
+    Image image = { 0 };
     image.data = NULL;
     image.width = width;
     image.height = height;
@@ -457,9 +457,9 @@ void UnloadRenderTexture(RenderTexture2D target)
 // Get pixel data from image in the form of Color struct array
 Color *GetImageData(Image image)
 {
+    if ((image.width == 0) || (image.height == 0)) return NULL;
+    
     Color *pixels = (Color *)RL_MALLOC(image.width*image.height*sizeof(Color));
-
-    if (pixels == NULL) return pixels;
     
     if (image.format >= COMPRESSED_DXT1_RGB) TraceLog(LOG_WARNING, "Pixel data retrieval not supported for compressed image formats");
     else
@@ -710,7 +710,11 @@ Rectangle GetImageAlphaBorder(Image image, float threshold)
             }
         }
 
-        crop = (Rectangle){ xMin, yMin, (xMax + 1) - xMin, (yMax + 1) - yMin };
+        // Check for empty blank image
+        if ((xMin != 65536) && (xMax != 65536))
+        {
+            crop = (Rectangle){ xMin, yMin, (xMax + 1) - xMin, (yMax + 1) - yMin };
+        }
 
         RL_FREE(pixels);
     }
@@ -773,11 +777,12 @@ Image GetTextureData(Texture2D texture)
             image.format = texture.format;
             image.mipmaps = 1;
 
-            // NOTE: Data retrieved on OpenGL ES 2.0 should be RGBA
-            // coming from FBO color buffer, but it seems original
-            // texture format is retrieved on RPI... weird...
-            //image.format = UNCOMPRESSED_R8G8B8A8;
-
+#if defined(GRAPHICS_API_OPENGL_ES2)
+            // NOTE: Data retrieved on OpenGL ES 2.0 should be RGBA,
+            // coming from FBO color buffer attachment, but it seems
+            // original texture format is retrieved on RPI...
+            image.format = UNCOMPRESSED_R8G8B8A8;
+#endif
             TraceLog(LOG_INFO, "Texture pixel data obtained successfully");
         }
         else TraceLog(LOG_WARNING, "Texture pixel data could not be obtained");
@@ -870,7 +875,7 @@ void ExportImageAsCode(Image image, const char *fileName)
         fprintf(txtFile, "// more info and bugs-report:  github.com/raysan5/raylib                              //\n");
         fprintf(txtFile, "// feedback and support:       ray[at]raylib.com                                      //\n");
         fprintf(txtFile, "//                                                                                    //\n");
-        fprintf(txtFile, "// Copyright (c) 2019 Ramon Santamaria (@raysan5)                                     //\n");
+        fprintf(txtFile, "// Copyright (c) 2020 Ramon Santamaria (@raysan5)                                     //\n");
         fprintf(txtFile, "//                                                                                    //\n");
         fprintf(txtFile, "////////////////////////////////////////////////////////////////////////////////////////\n\n");
 
@@ -1599,7 +1604,7 @@ void ImageMipmaps(Image *image)
 
     if (image->mipmaps < mipCount)
     {
-        void *temp = realloc(image->data, mipSize);
+        void *temp = RL_REALLOC(image->data, mipSize);
 
         if (temp != NULL)
         {
@@ -2987,9 +2992,9 @@ static Image LoadAnimatedGIF(const char *fileName, int *frames, int **delays)
     {
         fseek(gifFile, 0L, SEEK_END);
         int size = ftell(gifFile);
-        fseek(gifFile, 0L, SEEK_SET);	
+        fseek(gifFile, 0L, SEEK_SET);    
 
-        unsigned char *buffer = (unsigned char *)RL_CALLOC(size, sizeof(char));	
+        unsigned char *buffer = (unsigned char *)RL_CALLOC(size, sizeof(char));    
         fread(buffer, sizeof(char), size, gifFile);
 
         fclose(gifFile);    // Close file pointer

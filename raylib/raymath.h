@@ -20,7 +20,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2015-2019 Ramon Santamaria (@raysan5)
+*   Copyright (c) 2015-2020 Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -301,14 +301,14 @@ RMDEF Vector3 Vector3Subtract(Vector3 v1, Vector3 v2)
 }
 
 // Multiply vector by scalar
-RMDEF Vector3 Vector3Multiply(Vector3 v, float scalar)
+RMDEF Vector3 Vector3Scale(Vector3 v, float scalar)
 {
     Vector3 result = { v.x*scalar, v.y*scalar, v.z*scalar };
     return result;
 }
 
 // Multiply vector by vector
-RMDEF Vector3 Vector3MultiplyV(Vector3 v1, Vector3 v2)
+RMDEF Vector3 Vector3Multiply(Vector3 v1, Vector3 v2)
 {
     Vector3 result = { v1.x*v2.x, v1.y*v2.y, v1.z*v2.z };
     return result;
@@ -368,13 +368,6 @@ RMDEF float Vector3Distance(Vector3 v1, Vector3 v2)
     float dy = v2.y - v1.y;
     float dz = v2.z - v1.z;
     float result = sqrtf(dx*dx + dy*dy + dz*dz);
-    return result;
-}
-
-// Scale provided vector
-RMDEF Vector3 Vector3Scale(Vector3 v, float scale)
-{
-    Vector3 result = { v.x*scale, v.y*scale, v.z*scale };
     return result;
 }
 

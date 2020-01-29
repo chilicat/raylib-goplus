@@ -39,7 +39,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2014-2019 Ramon Santamaria (@raysan5)
+*   Copyright (c) 2014-2020 Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -64,13 +64,15 @@
 #if defined(RLGL_STANDALONE)
     #define RAYMATH_STANDALONE
     #define RAYMATH_HEADER_ONLY
+    
+    #define RLAPI   // We are building or using rlgl as a static library (or Linux shared library)
 
-    #if defined(_WIN32) && defined(BUILD_LIBTYPE_SHARED)
-        #define RLAPI __declspec(dllexport)         // We are building raylib as a Win32 shared library (.dll)
-    #elif defined(_WIN32) && defined(USE_LIBTYPE_SHARED)
-        #define RLAPI __declspec(dllimport)         // We are using raylib as a Win32 shared library (.dll)
-    #else
-        #define RLAPI   // We are building or using raylib as a static library (or Linux shared library)
+    #if defined(_WIN32)
+        #if defined(BUILD_LIBTYPE_SHARED)
+            #define RLAPI __declspec(dllexport)         // We are building raylib as a Win32 shared library (.dll)
+        #elif defined(USE_LIBTYPE_SHARED)
+            #define RLAPI __declspec(dllimport)         // We are using raylib as a Win32 shared library (.dll)
+        #endif
     #endif
 
     // Allow custom memory allocators
@@ -79,6 +81,9 @@
     #endif
     #ifndef RL_CALLOC
         #define RL_CALLOC(n,sz)     calloc(n,sz)
+    #endif
+    #ifndef RL_REALLOC
+        #define RL_REALLOC(n,sz)    realloc(n,sz)
     #endif
     #ifndef RL_FREE
         #define RL_FREE(p)          free(p)
@@ -127,9 +132,18 @@
     #define MAX_BATCH_ELEMENTS            2048
 #endif
 
-#define MAX_BATCH_BUFFERING                  1      // Max number of buffers for batching (multi-buffering)
+#ifndef MAX_BATCH_BUFFERING
+    #define MAX_BATCH_BUFFERING              1      // Max number of buffers for batching (multi-buffering)
+#endif
 #define MAX_MATRIX_STACK_SIZE               32      // Max size of Matrix stack
 #define MAX_DRAWCALL_REGISTERED            256      // Max draws by state changes (mode, texture)
+
+#ifndef DEFAULT_NEAR_CULL_DISTANCE
+    #define DEFAULT_NEAR_CULL_DISTANCE    0.01      // Default near cull distance
+#endif
+#ifndef DEFAULT_FAR_CULL_DISTANCE
+    #define DEFAULT_FAR_CULL_DISTANCE   1000.0      // Default far cull distance
+#endif
 
 // Shader and material limits
 #define MAX_SHADER_LOCATIONS                32      // Maximum number of predefined locations stored in shader struct
@@ -537,7 +551,7 @@ RLAPI Matrix GetMatrixModelview(void);                                    // Get
 
 // Texture maps generation (PBR)
 // NOTE: Required shaders should be provided
-RLAPI Texture2D GenTextureCubemap(Shader shader, Texture2D skyHDR, int size);       // Generate cubemap texture from HDR texture
+RLAPI Texture2D GenTextureCubemap(Shader shader, Texture2D map, int size);          // Generate cubemap texture from HDR texture
 RLAPI Texture2D GenTextureIrradiance(Shader shader, Texture2D cubemap, int size);   // Generate irradiance texture using cubemap data
 RLAPI Texture2D GenTexturePrefilter(Shader shader, Texture2D cubemap, int size);    // Generate prefilter texture using cubemap data
 RLAPI Texture2D GenTextureBRDF(Shader shader, int size);                  // Generate BRDF texture using cubemap data
@@ -767,69 +781,52 @@ typedef struct VrStereoConfig {
 // Global Variables Definition
 //----------------------------------------------------------------------------------
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
-static Matrix stack[MAX_MATRIX_STACK_SIZE] = { 0 };
-static int stackCounter = 0;
-
-static Matrix modelview = { 0 };
-static Matrix projection = { 0 };
-static Matrix *currentMatrix = NULL;
-static int currentMatrixMode = -1;
-static float currentDepth = -1.0f;
+static Matrix stack[MAX_MATRIX_STACK_SIZE] = { 0 }; // Matrix stack for push/pop
+static int stackCounter = 0;                // Matrix stack counter
+static Matrix modelview = { 0 };            // Default modelview matrix
+static Matrix projection = { 0 };           // Default projection matrix
+static Matrix *currentMatrix = NULL;        // Current matrix pointer
+static int currentMatrixMode = -1;          // Current matrix mode
+static float currentDepth = -1.0f;          // Current depth value 
 
 // Default dynamic buffer for elements data
 // NOTE: A multi-buffering system is supported
 static DynamicBuffer vertexData[MAX_BATCH_BUFFERING] = { 0 };
-static int currentBuffer = 0;
+static int currentBuffer = 0;               // Current buffer tracking
 
-// Transform matrix to be used with rlTranslate, rlRotate, rlScale
-static Matrix transformMatrix = { 0 };
-static bool useTransformMatrix = false;
+static Matrix transformMatrix = { 0 };      // Transform matrix to be used with rlTranslate, rlRotate, rlScale
+static bool useTransformMatrix = false;     // Use transform matrix against vertex (if required)
 
-// Default buffers draw calls
-static DrawCall *draws = NULL;
-static int drawsCounter = 0;
+static DrawCall *draws = NULL;              // Draw calls array
+static int drawsCounter = 0;                // Draw calls counter
 
-// Default texture (1px white) useful for plain color polys (required by shader)
-static unsigned int defaultTextureId = 0;
-
-// Default shaders
+static unsigned int defaultTextureId = 0;   // Default texture used on shapes/poly drawing (required by shader)
 static unsigned int defaultVShaderId = 0;   // Default vertex shader id (used by default shader program)
 static unsigned int defaultFShaderId = 0;   // Default fragment shader Id (used by default shader program)
-
 static Shader defaultShader = { 0 };        // Basic shader, support vertex color and diffuse texture
 static Shader currentShader = { 0 };        // Shader to be used on rendering (by default, defaultShader)
 
-// Extension supported flag: VAO
+// Extensions supported flags
 static bool vaoSupported = false;           // VAO support (OpenGL ES2 could not support VAO extension)
-
-// Extension supported flag: Compressed textures
 static bool texCompDXTSupported = false;    // DDS texture compression support
 static bool texCompETC1Supported = false;   // ETC1 texture compression support
 static bool texCompETC2Supported = false;   // ETC2/EAC texture compression support
 static bool texCompPVRTSupported = false;   // PVR texture compression support
 static bool texCompASTCSupported = false;   // ASTC texture compression support
-
-// Extension supported flag: Textures format
 static bool texNPOTSupported = false;       // NPOT textures full support
 static bool texFloatSupported = false;      // float textures support (32 bit per channel)
 static bool texDepthSupported = false;      // Depth textures supported
-static int maxDepthBits = 16;               // Maximum bits for depth component
-
-// Extension supported flag: Clamp mirror wrap mode
-static bool texMirrorClampSupported = false;        // Clamp mirror wrap mode supported
-
-// Extension supported flag: Anisotropic filtering
-static bool texAnisotropicFilterSupported = false;  // Anisotropic texture filtering support
-static float maxAnisotropicLevel = 0.0f;            // Maximum anisotropy level supported (minimum is 2.0f)
-
+static bool texMirrorClampSupported = false;// Clamp mirror wrap mode supported
+static bool texAnisoFilterSupported = false;// Anisotropic texture filtering support
 static bool debugMarkerSupported = false;   // Debug marker support
+static int maxDepthBits = 16;               // Maximum bits for depth component
+static float maxAnisotropicLevel = 0.0f;    // Maximum anisotropy level supported (minimum is 2.0f)
 
 #if defined(GRAPHICS_API_OPENGL_ES2)
 // NOTE: VAO functionality is exposed through extensions (OES)
-static PFNGLGENVERTEXARRAYSOESPROC glGenVertexArrays;
-static PFNGLBINDVERTEXARRAYOESPROC glBindVertexArray;
-static PFNGLDELETEVERTEXARRAYSOESPROC glDeleteVertexArrays;
-//static PFNGLISVERTEXARRAYOESPROC glIsVertexArray;   // NOTE: Fails in WebGL, omitted
+static PFNGLGENVERTEXARRAYSOESPROC glGenVertexArrays;        // Entry point pointer to function glGenVertexArrays()
+static PFNGLBINDVERTEXARRAYOESPROC glBindVertexArray;        // Entry point pointer to function glBindVertexArray()
+static PFNGLDELETEVERTEXARRAYSOESPROC glDeleteVertexArrays;  // Entry point pointer to function glDeleteVertexArrays()
 #endif
 
 #if defined(SUPPORT_VR_SIMULATOR)
@@ -1299,8 +1296,10 @@ void rlTextureParameters(unsigned int id, int param, int value)
         {
             if (value == RL_WRAP_MIRROR_CLAMP)
             {
+#if !defined(GRAPHICS_API_OPENGL_11)
                 if (texMirrorClampSupported) glTexParameteri(GL_TEXTURE_2D, param, value);
                 else TraceLog(LOG_WARNING, "Clamp mirror wrap mode not supported");
+#endif
             }
             else glTexParameteri(GL_TEXTURE_2D, param, value);
 
@@ -1617,7 +1616,7 @@ void rlglInit(int width, int height)
         // Anisotropic texture filter support
         if (strcmp(extList[i], (const char *)"GL_EXT_texture_filter_anisotropic") == 0)
         {
-            texAnisotropicFilterSupported = true;
+            texAnisoFilterSupported = true;
             glGetFloatv(0x84FF, &maxAnisotropicLevel);   // GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT
         }
 
@@ -1647,7 +1646,7 @@ void rlglInit(int width, int height)
     if (texCompPVRTSupported) TraceLog(LOG_INFO, "[EXTENSION] PVRT compressed textures supported");
     if (texCompASTCSupported) TraceLog(LOG_INFO, "[EXTENSION] ASTC compressed textures supported");
 
-    if (texAnisotropicFilterSupported) TraceLog(LOG_INFO, "[EXTENSION] Anisotropic textures filtering supported (max: %.0fX)", maxAnisotropicLevel);
+    if (texAnisoFilterSupported) TraceLog(LOG_INFO, "[EXTENSION] Anisotropic textures filtering supported (max: %.0fX)", maxAnisotropicLevel);
     if (texMirrorClampSupported) TraceLog(LOG_INFO, "[EXTENSION] Mirror clamp wrap texture mode supported");
 
     if (debugMarkerSupported) TraceLog(LOG_INFO, "[EXTENSION] Debug Marker supported");
@@ -2057,9 +2056,10 @@ unsigned int rlLoadTextureDepth(int width, int height, int bits, bool useRenderB
 unsigned int rlLoadTextureCubemap(void *data, int size, int format)
 {
     unsigned int cubemapId = 0;
-    unsigned int dataSize = GetPixelDataSize(size, size, format);
 
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
+    unsigned int dataSize = GetPixelDataSize(size, size, format);
+    
     glGenTextures(1, &cubemapId);
     glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapId);
 
@@ -2072,9 +2072,8 @@ unsigned int rlLoadTextureCubemap(void *data, int size, int format)
         for (unsigned int i = 0; i < 6; i++)
         {
             if (format < COMPRESSED_DXT1_RGB) glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, glInternalFormat, size, size, 0, glFormat, glType, (unsigned char *)data + i*dataSize);
-#if !defined(GRAPHICS_API_OPENGL_11)
             else glCompressedTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, glInternalFormat, size, size, 0, dataSize, (unsigned char *)data + i*dataSize);
-#endif
+
 #if defined(GRAPHICS_API_OPENGL_33)
             if (format == UNCOMPRESSED_GRAYSCALE)
             {
@@ -2664,16 +2663,13 @@ void rlDrawMesh(Mesh mesh, Material material, Matrix transform)
     Matrix matView = modelview;         // View matrix (camera)
     Matrix matProjection = projection;  // Projection matrix (perspective)
 
-    // TODO: Matrix nightmare! Trying to combine stack matrices with view matrix and local model transform matrix..
-    // There is some problem in the order matrices are multiplied... it requires some time to figure out...
-    Matrix matStackTransform = MatrixIdentity();
-
     // TODO: Consider possible transform matrices in the stack
     // Is this the right order? or should we start with the first stored matrix instead of the last one?
+    //Matrix matStackTransform = MatrixIdentity();
     //for (int i = stackCounter; i > 0; i--) matStackTransform = MatrixMultiply(stack[i], matStackTransform);
 
-    Matrix matModel = MatrixMultiply(transform, matStackTransform); // Apply local model transformation
-    Matrix matModelView = MatrixMultiply(matModel, matView);        // Transform to camera-space coordinates
+    // Transform to camera-space coordinates
+    Matrix matModelView = MatrixMultiply(transform, MatrixMultiply(transformMatrix, matView));
     //-----------------------------------------------------
 
     // Bind active texture maps (if available)
@@ -2905,15 +2901,9 @@ void *rlReadTexturePixels(Texture2D texture)
     // NOTE: Previoust attached texture is automatically detached
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture.id, 0);
 
-    // Allocate enough memory to read back our texture data
-    pixels = (unsigned char *)RL_MALLOC(GetPixelDataSize(texture.width, texture.height, texture.format));
-
-    // Get OpenGL internal formats and data type from our texture format
-    unsigned int glInternalFormat, glFormat, glType;
-    rlGetGlTextureFormats(texture.format, &glInternalFormat, &glFormat, &glType);
-
-    // NOTE: We read data as RGBA because FBO texture is configured as RGBA, despite binding a RGB texture...
-    glReadPixels(0, 0, texture.width, texture.height, glFormat, glType, pixels);
+    // We read data as RGBA because FBO texture is configured as RGBA, despite binding another texture format
+    pixels = (unsigned char *)RL_MALLOC(GetPixelDataSize(texture.width, texture.height, UNCOMPRESSED_R8G8B8A8));
+    glReadPixels(0, 0, texture.width, texture.height, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
 
     // Re-attach internal FBO color texture before deleting it
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, fbo.texture.id, 0);
@@ -3226,7 +3216,7 @@ Matrix GetMatrixModelview(void)
 
 // Generate cubemap texture from HDR texture
 // TODO: OpenGL ES 2.0 does not support GL_RGB16F texture format, neither GL_DEPTH_COMPONENT24
-Texture2D GenTextureCubemap(Shader shader, Texture2D skyHDR, int size)
+Texture2D GenTextureCubemap(Shader shader, Texture2D map, int size)
 {
     Texture2D cubemap = { 0 };
 #if defined(GRAPHICS_API_OPENGL_33) || defined(GRAPHICS_API_OPENGL_ES2)
@@ -3274,7 +3264,7 @@ Texture2D GenTextureCubemap(Shader shader, Texture2D skyHDR, int size)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     // Create projection and different views for each face
-    Matrix fboProjection = MatrixPerspective(90.0*DEG2RAD, 1.0, 0.01, 1000.0);
+    Matrix fboProjection = MatrixPerspective(90.0*DEG2RAD, 1.0, DEFAULT_NEAR_CULL_DISTANCE, DEFAULT_FAR_CULL_DISTANCE);
     Matrix fboViews[6] = {
         MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){ 1.0f, 0.0f, 0.0f }, (Vector3){ 0.0f, -1.0f, 0.0f }),
         MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){ -1.0f, 0.0f, 0.0f }, (Vector3){ 0.0f, -1.0f, 0.0f }),
@@ -3287,7 +3277,7 @@ Texture2D GenTextureCubemap(Shader shader, Texture2D skyHDR, int size)
     // Convert HDR equirectangular environment map to cubemap equivalent
     glUseProgram(shader.id);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, skyHDR.id);
+    glBindTexture(GL_TEXTURE_2D, map.id);
     SetShaderValueMatrix(shader, shader.locs[LOC_MATRIX_PROJECTION], fboProjection);
 
     // Note: don't forget to configure the viewport to the capture dimensions
@@ -3352,7 +3342,7 @@ Texture2D GenTextureIrradiance(Shader shader, Texture2D cubemap, int size)
     glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     // Create projection (transposed) and different views for each face
-    Matrix fboProjection = MatrixPerspective(90.0*DEG2RAD, 1.0, 0.01, 1000.0);
+    Matrix fboProjection = MatrixPerspective(90.0*DEG2RAD, 1.0, DEFAULT_NEAR_CULL_DISTANCE, DEFAULT_FAR_CULL_DISTANCE);
     Matrix fboViews[6] = {
         MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){ 1.0f, 0.0f, 0.0f }, (Vector3){ 0.0f, -1.0f, 0.0f }),
         MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){ -1.0f, 0.0f, 0.0f }, (Vector3){ 0.0f, -1.0f, 0.0f }),
@@ -3433,7 +3423,7 @@ Texture2D GenTexturePrefilter(Shader shader, Texture2D cubemap, int size)
     glGenerateMipmap(GL_TEXTURE_CUBE_MAP);
 
     // Create projection (transposed) and different views for each face
-    Matrix fboProjection = MatrixPerspective(90.0*DEG2RAD, 1.0, 0.01, 1000.0);
+    Matrix fboProjection = MatrixPerspective(90.0*DEG2RAD, 1.0, DEFAULT_NEAR_CULL_DISTANCE, DEFAULT_FAR_CULL_DISTANCE);
     Matrix fboViews[6] = {
         MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){ 1.0f, 0.0f, 0.0f }, (Vector3){ 0.0f, -1.0f, 0.0f }),
         MatrixLookAt((Vector3){ 0.0f, 0.0f, 0.0f }, (Vector3){ -1.0f, 0.0f, 0.0f }, (Vector3){ 0.0f, -1.0f, 0.0f }),
@@ -3651,7 +3641,7 @@ void SetVrConfiguration(VrDeviceInfo hmd, Shader distortion)
 
     // Compute camera projection matrices
     float projOffset = 4.0f*lensShift;      // Scaled to projection space coordinates [-1..1]
-    Matrix proj = MatrixPerspective(fovy, aspect, 0.01, 1000.0);
+    Matrix proj = MatrixPerspective(fovy, aspect, DEFAULT_NEAR_CULL_DISTANCE, DEFAULT_FAR_CULL_DISTANCE);
     vrConfig.eyesProjection[0] = MatrixMultiply(proj, MatrixTranslate(projOffset, 0.0f, 0.0f));
     vrConfig.eyesProjection[1] = MatrixMultiply(proj, MatrixTranslate(-projOffset, 0.0f, 0.0f));
 
@@ -4504,7 +4494,7 @@ static int GenerateMipmaps(unsigned char *data, int baseWidth, int baseHeight)
     TraceLog(LOG_DEBUG, "Total mipmaps required: %i", mipmapCount);
     TraceLog(LOG_DEBUG, "Total size of data required: %i", size);
 
-    unsigned char *temp = realloc(data, size);
+    unsigned char *temp = RL_REALLOC(data, size);
 
     if (temp != NULL) data = temp;
     else TraceLog(LOG_WARNING, "Mipmaps required memory could not be allocated");

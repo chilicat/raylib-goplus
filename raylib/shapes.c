@@ -14,7 +14,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2013-2019 Ramon Santamaria (@raysan5)
+*   Copyright (c) 2013-2020 Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -58,8 +58,8 @@
 //----------------------------------------------------------------------------------
 // Global Variables Definition
 //----------------------------------------------------------------------------------
-static Texture2D texShapes = { 0 };
-static Rectangle recTexShapes = { 0 };
+static Texture2D texShapes = { 0 };         // Texture used on shapes drawing (usually a white)
+static Rectangle recTexShapes = { 0 };      // Texture source rectangle used on shapes drawing
 
 //----------------------------------------------------------------------------------
 // Module specific Functions Declaration
@@ -398,7 +398,38 @@ void DrawCircleLines(int centerX, int centerY, float radius, Color color)
             rlVertex2f(centerX + sinf(DEG2RAD*i)*radius, centerY + cosf(DEG2RAD*i)*radius);
             rlVertex2f(centerX + sinf(DEG2RAD*(i + 10))*radius, centerY + cosf(DEG2RAD*(i + 10))*radius);
         }
-   rlEnd();
+    rlEnd();
+}
+
+// Draw ellipse
+void DrawEllipse(int centerX, int centerY, float radiusH, float radiusV, Color color)
+{
+    if (rlCheckBufferLimit(3*36)) rlglDraw();
+
+    rlBegin(RL_TRIANGLES);
+        for (int i = 0; i < 360; i += 10)
+        {
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(centerX, centerY);
+            rlVertex2f(centerX + sinf(DEG2RAD*i)*radiusH, centerY + cosf(DEG2RAD*i)*radiusV);
+            rlVertex2f(centerX + sinf(DEG2RAD*(i + 10))*radiusH, centerY + cosf(DEG2RAD*(i + 10))*radiusV);
+        }
+    rlEnd();
+}
+
+// Draw ellipse outline
+void DrawEllipseLines(int centerX, int centerY, float radiusH, float radiusV, Color color)
+{
+    if (rlCheckBufferLimit(2*36)) rlglDraw();
+
+    rlBegin(RL_LINES);
+        for (int i = 0; i < 360; i += 10)
+        {
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex2f(centerX + sinf(DEG2RAD*i)*radiusH, centerY + cosf(DEG2RAD*i)*radiusV);
+            rlVertex2f(centerX + sinf(DEG2RAD*(i + 10))*radiusH, centerY + cosf(DEG2RAD*(i + 10))*radiusV);
+        }
+    rlEnd();
 }
 
 void DrawRing(Vector2 center, float innerRadius, float outerRadius, int startAngle, int endAngle, int segments, Color color)
@@ -1343,6 +1374,31 @@ void DrawPoly(Vector2 center, int sides, float radius, float rotation, Color col
             }
         rlEnd();
 #endif
+    rlPopMatrix();
+}
+
+// Draw a polygon outline of n sides
+void DrawPolyLines(Vector2 center, int sides, float radius, float rotation, Color color)
+{
+    if (sides < 3) sides = 3;
+    float centralAngle = 0.0f;
+
+    if (rlCheckBufferLimit(3*(360/sides))) rlglDraw();
+
+    rlPushMatrix();
+        rlTranslatef(center.x, center.y, 0.0f);
+        rlRotatef(rotation, 0.0f, 0.0f, 1.0f);
+        
+        rlBegin(RL_LINES);
+            for (int i = 0; i < sides; i++)
+            {
+                rlColor4ub(color.r, color.g, color.b, color.a);
+
+                rlVertex2f(sinf(DEG2RAD*centralAngle)*radius, cosf(DEG2RAD*centralAngle)*radius);
+                centralAngle += 360.0f/(float)sides;
+                rlVertex2f(sinf(DEG2RAD*centralAngle)*radius, cosf(DEG2RAD*centralAngle)*radius);
+            }
+        rlEnd();
     rlPopMatrix();
 }
 

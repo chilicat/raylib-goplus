@@ -17,7 +17,7 @@
 *
 *   LICENSE: zlib/libpng
 *
-*   Copyright (c) 2013-2019 Ramon Santamaria (@raysan5)
+*   Copyright (c) 2013-2020 Ramon Santamaria (@raysan5)
 *
 *   This software is provided "as-is", without any express or implied warranty. In no event
 *   will the authors be held liable for any damages arising from the use of this software.
@@ -108,6 +108,21 @@ void DrawLine3D(Vector3 startPos, Vector3 endPos, Color color)
         rlVertex3f(startPos.x, startPos.y, startPos.z);
         rlVertex3f(endPos.x, endPos.y, endPos.z);
     rlEnd();
+}
+
+// Draw a point in 3D space, actually a small line
+void DrawPoint3D(Vector3 position, Color color)
+{
+    if (rlCheckBufferLimit(8)) rlglDraw();
+    
+    rlPushMatrix();
+        rlTranslatef(position.x, position.y, position.z);
+        rlBegin(RL_LINES);
+            rlColor4ub(color.r, color.g, color.b, color.a);
+            rlVertex3f(0.0,0.0,0.0);
+            rlVertex3f(0.0,0.0,0.1);
+        rlEnd();
+    rlPopMatrix();
 }
 
 // Draw a circle in 3D world space
@@ -649,11 +664,14 @@ Model LoadModel(const char *fileName)
 
     if (model.meshCount == 0)
     {
-        TraceLog(LOG_WARNING, "[%s] No meshes can be loaded, default to cube mesh", fileName);
-
         model.meshCount = 1;
         model.meshes = (Mesh *)RL_CALLOC(model.meshCount, sizeof(Mesh));
+#if defined(SUPPORT_MESH_GENERATION)
+        TraceLog(LOG_WARNING, "[%s] No meshes can be loaded, default to cube mesh", fileName);
         model.meshes[0] = GenMeshCube(1.0f, 1.0f, 1.0f);
+#else
+        TraceLog(LOG_WARNING, "[%s] No meshes can be loaded, and can't create a default mesh. The raylib mesh generation is not supported (SUPPORT_MESH_GENERATION).", fileName);
+#endif
     }
     else
     {
@@ -912,7 +930,7 @@ ModelAnimation *LoadModelAnimations(const char *filename, int *animCount)
         unsigned int flags;
     } IQMAnim;
 
-    FILE *iqmFile;
+    FILE *iqmFile = NULL;
     IQMHeader iqm;
 
     iqmFile = fopen(filename,"rb");
@@ -1074,7 +1092,7 @@ ModelAnimation *LoadModelAnimations(const char *filename, int *animCount)
                     animations[a].framePoses[frame][i].rotation = QuaternionMultiply(animations[a].framePoses[frame][animations[a].bones[i].parent].rotation, animations[a].framePoses[frame][i].rotation);
                     animations[a].framePoses[frame][i].translation = Vector3RotateByQuaternion(animations[a].framePoses[frame][i].translation, animations[a].framePoses[frame][animations[a].bones[i].parent].rotation);
                     animations[a].framePoses[frame][i].translation = Vector3Add(animations[a].framePoses[frame][i].translation, animations[a].framePoses[frame][animations[a].bones[i].parent].translation);
-                    animations[a].framePoses[frame][i].scale = Vector3MultiplyV(animations[a].framePoses[frame][i].scale, animations[a].framePoses[frame][animations[a].bones[i].parent].scale);
+                    animations[a].framePoses[frame][i].scale = Vector3Multiply(animations[a].framePoses[frame][i].scale, animations[a].framePoses[frame][animations[a].bones[i].parent].scale);
                 }
             }
         }
@@ -1127,7 +1145,7 @@ void UpdateModelAnimation(Model model, ModelAnimation anim, int frame)
                 // Vertices processing
                 // NOTE: We use meshes.vertices (default vertex position) to calculate meshes.animVertices (animated vertex position)
                 animVertex = (Vector3){ model.meshes[m].vertices[vCounter], model.meshes[m].vertices[vCounter + 1], model.meshes[m].vertices[vCounter + 2] };
-                animVertex = Vector3MultiplyV(animVertex, outScale);
+                animVertex = Vector3Multiply(animVertex, outScale);
                 animVertex = Vector3Subtract(animVertex, inTranslation);
                 animVertex = Vector3RotateByQuaternion(animVertex, QuaternionMultiply(outRotation, QuaternionInvert(inRotation)));
                 animVertex = Vector3Add(animVertex, outTranslation);
@@ -1149,7 +1167,7 @@ void UpdateModelAnimation(Model model, ModelAnimation anim, int frame)
 
             // Upload new vertex data to GPU for model drawing
             rlUpdateBuffer(model.meshes[m].vboId[0], model.meshes[m].animVertices, model.meshes[m].vertexCount*3*sizeof(float));    // Update vertex position
-            rlUpdateBuffer(model.meshes[m].vboId[2], model.meshes[m].animVertices, model.meshes[m].vertexCount*3*sizeof(float));    // Update vertex normals
+            rlUpdateBuffer(model.meshes[m].vboId[2], model.meshes[m].animNormals, model.meshes[m].vertexCount*3*sizeof(float));     // Update vertex normals
         }
     }
 }
@@ -2326,7 +2344,7 @@ void MeshTangents(Mesh *mesh)
 
         // TODO: Review, not sure if tangent computation is right, just used reference proposed maths...
     #if defined(COMPUTE_TANGENTS_METHOD_01)
-        Vector3 tmp = Vector3Subtract(tangent, Vector3Multiply(normal, Vector3DotProduct(normal, tangent)));
+        Vector3 tmp = Vector3Subtract(tangent, Vector3Scale(normal, Vector3DotProduct(normal, tangent)));
         tmp = Vector3Normalize(tmp);
         mesh->tangents[i*4 + 0] = tmp.x;
         mesh->tangents[i*4 + 1] = tmp.y;
@@ -2355,12 +2373,11 @@ void MeshBinormals(Mesh *mesh)
 {
     for (int i = 0; i < mesh->vertexCount; i++)
     {
-        Vector3 normal = { mesh->normals[i*3 + 0], mesh->normals[i*3 + 1], mesh->normals[i*3 + 2] };
-        Vector3 tangent = { mesh->tangents[i*4 + 0], mesh->tangents[i*4 + 1], mesh->tangents[i*4 + 2] };
-        float tangentW = mesh->tangents[i*4 + 3];
-
+        //Vector3 normal = { mesh->normals[i*3 + 0], mesh->normals[i*3 + 1], mesh->normals[i*3 + 2] };
+        //Vector3 tangent = { mesh->tangents[i*4 + 0], mesh->tangents[i*4 + 1], mesh->tangents[i*4 + 2] };
+        //Vector3 binormal = Vector3Scale(Vector3CrossProduct(normal, tangent), mesh->tangents[i*4 + 3]);
+        
         // TODO: Register computed binormal in mesh->binormal?
-        // Vector3 binormal = Vector3Multiply(Vector3CrossProduct(normal, tangent), tangentW);
     }
 }
 
@@ -2901,7 +2918,7 @@ static Model LoadOBJ(const char *fileName)
                 float shininess;
                 float ior;          // index of refraction
                 float dissolve;     // 1 == opaque; 0 == fully transparent
-                // illumination model (see http://www.fileformat.info/format/material/)
+                // illumination model (Ref: http://www.fileformat.info/format/material/)
                 int illum;
 
                 int pad0;
@@ -3031,7 +3048,7 @@ static Model LoadIQM(const char *fileName)
     //-----------------------------------------------------------------------------------
 
     // IQM vertex data types
-    typedef enum {
+    enum {
         IQM_POSITION     = 0,
         IQM_TEXCOORD     = 1,
         IQM_NORMAL       = 2,
@@ -3040,11 +3057,11 @@ static Model LoadIQM(const char *fileName)
         IQM_BLENDWEIGHTS = 5,
         IQM_COLOR        = 6,       // NOTE: Vertex colors unused by default
         IQM_CUSTOM       = 0x10     // NOTE: Custom vertex values unused by default
-    } IQMVertexType;
+    };
 
     Model model = { 0 };
 
-    FILE *iqmFile;
+    FILE *iqmFile = NULL;
     IQMHeader iqm;
 
     IQMMesh *imesh;
@@ -3268,7 +3285,7 @@ static Model LoadIQM(const char *fileName)
             model.bindPose[i].rotation = QuaternionMultiply(model.bindPose[model.bones[i].parent].rotation, model.bindPose[i].rotation);
             model.bindPose[i].translation = Vector3RotateByQuaternion(model.bindPose[i].translation, model.bindPose[model.bones[i].parent].rotation);
             model.bindPose[i].translation = Vector3Add(model.bindPose[i].translation, model.bindPose[model.bones[i].parent].translation);
-            model.bindPose[i].scale = Vector3MultiplyV(model.bindPose[i].scale, model.bindPose[model.bones[i].parent].scale);
+            model.bindPose[i].scale = Vector3Multiply(model.bindPose[i].scale, model.bindPose[model.bones[i].parent].scale);
         }
     }
 
@@ -3520,7 +3537,6 @@ static Model LoadGLTF(const char *fileName)
 
         for (int i = 0; i < model.meshCount; i++) model.meshes[i].vboId = (unsigned int *)RL_CALLOC(MAX_MESH_VBO, sizeof(unsigned int));
 
-        //For each material
         for (int i = 0; i < model.materialCount - 1; i++)
         {
             model.materials[i] = LoadMaterialDefault();
